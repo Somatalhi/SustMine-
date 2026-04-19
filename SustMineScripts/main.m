@@ -1,0 +1,139 @@
+% Folder:SustMine Script
+% main.m : main script for hierarchical classification and composite Pareto
+% ranking 
+% jenks_gvf.m : Jenks classification with GVF threshold 
+% jenks_breaks.m : Jenks natural breaks implementation 
+% pareto_rank.m : Pareto front rank calculations 
+% readme.m : description of method 
+%--------------------------------------------------
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SustMine: A Framework for integrating Sustainable Development in
+% Strategic Mine Planning 
+% Author: Hussam N. Altalhi
+% Advisor: Awuah-Offei, Kwame
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%--------------------------------------------------
+%  Mathematical Model:Pareto Front-Based Approach
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% management functions
+clear;
+clc;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Set up the data
+% Load indicator data matrix
+DM = readmatrix('SustMine_SDI_values.xlsx');  % rows = schedules, cols = SDIs 
+%------------------------------------------
+% Column indices for readability
+col_NPV          = 1;
+col_Tax          = 2;
+col_Royalties    = 3;
+col_GHG          = 4;
+col_Energy       = 5;
+col_NOx          = 6;
+col_PM10         = 7;
+col_LandOcc      = 8;
+col_Waste        = 9;
+col_ARD          = 10;
+col_Reclamation  = 11;
+col_Employees    = 12;
+col_JobSec       = 13;
+col_PitUtil      = 14;
+col_Safety       = 15;
+
+% Flip signs for maximization
+DM(:, col_NPV)       = -DM(:, col_NPV);
+DM(:, col_Employees) = -DM(:, col_Employees);
+DM(:, col_JobSec)    = -DM(:, col_JobSec);
+DM(:, col_PitUtil)   = -DM(:, col_PitUtil);   
+ 
+%------------------------------------------
+% Normalize indicators' values from [0-10]
+for i = 1:size(DM, 2)
+    DM(:, i) = 10 * (DM(:,i) - min(DM(:,i))) / (max(DM(:,i)) - min(DM(:,i)));
+end 
+%------------------------------------------
+% Discertize indicators using Jenks classification
+DM_classified = zeros (size(DM));
+for i = 1:size(DM,2)
+    [DM_classified(:,i), gvf] = jenks_gvf(DM(:,i), 0.80, 8);
+    fprintf('indicator %d GVF: %.2f\n', i, gvf);
+end 
+% Group by dimensions
+economic      = DM_classified(:, [col_NPV, col_Tax, col_Royalties]);
+environmental = DM_classified(:, [col_GHG, col_Energy, col_NOx, col_PM10, ...
+                                  col_LandOcc, col_Waste, col_ARD, col_Reclamation]);
+social        = DM_classified(:, [col_Employees, col_JobSec, col_PitUtil, col_Safety]);
+
+% Compute Pareto ranks for each dimension
+Economic_Index = pareto_rank(economic);
+Environmental_Index = pareto_rank(environmental);
+Social_Index = pareto_rank(social);
+
+% Aggregate into composite matrix and compute final Pareto rank
+dim_matrix = [Economic_Index, Environmental_Index, Social_Index];
+Composite_Index = pareto_rank(dim_matrix);
+
+% Display final results
+result_table = table(Economic_Index, Environmental_Index, Social_Index, Composite_Index, ...
+    'VariableNames', {'EconomicRank', 'EnvironmentalRank', 'SocialRank', 'CompositeRank'});
+disp(result_table);
+
+%-------------------------------------------------------------
+% Effectiveness Metric 1: Number of Pareto Fronts (NPF)
+NPF = max(Composite_Index);
+fprintf('Number of Pareto Fronts (NPF): %d\n', NPF);
+% Effectiveness Metric 2: Shannon Entropy of Composite Rank Distribution
+uniqueRanks = unique(Composite_Index);
+counts = zeros(length(uniqueRanks), 1);
+for i = 1:length(uniqueRanks)
+    counts(i) = sum(Composite_Index == uniqueRanks(i));
+end
+probabilities = counts / sum(counts);
+shannon_entropy = -sum(probabilities .* log2(probabilities));
+fprintf('Shannon Entropy of Composite Rank Distribution: %.4f\n', shannon_entropy);
+%--------------------------------------------------
+% Visualization of Composite and Dimension-Level Pareto Ranks
+%--------------------------------------------------
+%--------------------------------------------------
+% Heatmap of SD Dimension Ranks and Composite Rank
+%--------------------------------------------------
+
+% Convert result_table to matrix
+rankMatrix = [result_table.EconomicRank, ...
+              result_table.EnvironmentalRank, ...
+              result_table.SocialRank, ...
+              result_table.CompositeRank]';
+
+% Define labels
+rowLabels = {'Economic', 'Environmental', 'Social', 'Composite'};
+colLabels = strcat('Schedule', string(1:size(rankMatrix, 2)));
+
+% Create the heatmap
+figure;
+h = heatmap(colLabels, rowLabels, rankMatrix, ...
+    'CellLabelColor','black', ...
+    'Colormap', parula(max(rankMatrix(:))), ...
+    'ColorbarVisible','on');
+
+% Format
+title('Heatmap of SD Dimension Index Structure and Sustainability Composite Index');
+h.XLabel = 'Alternatives';
+h.YLabel = 'Rank Type';
+
+%--------------------------------------------------
+% Export SustMine Results for Python
+%--------------------------------------------------
+
+outputFolder = 'S:\SustMine_python'; % Change this path to match your Python project folder
+
+% Export main results table
+writetable(result_table, fullfile(outputFolder, 'sustmine_result_table.csv'));
+
+% Export individual arrays
+csvwrite(fullfile(outputFolder, 'DM_normalized.csv'), DM);
+csvwrite(fullfile(outputFolder, 'DM_classified.csv'), DM_classified);
+csvwrite(fullfile(outputFolder, 'eco_rank.csv'), Economic_Index);
+csvwrite(fullfile(outputFolder, 'env_rank.csv'), Environmental_Index);
+csvwrite(fullfile(outputFolder, 'soc_rank.csv'), Social_Index);
+csvwrite(fullfile(outputFolder, 'composite_rank.csv'), Composite_Index);

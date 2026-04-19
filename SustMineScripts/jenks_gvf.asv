@@ -1,0 +1,49 @@
+% jenks_gvf.m : Jenks classification with GVF threshold
+%--------------------------------------------------
+% % The name of the function is 'jenks_gvf'
+% This function has 3 inputs and 2 outputs.
+%
+% Inputs:
+% data: A column of numerical values (e.g., indicator values)
+% gvfThreshold: The minimum GVF desired by user (typically >= 0.80)
+% maxClasses: The maximum number of breaks (or levels) it should try
+%
+% Outputs: 
+% classLabels: A vector assigning each input value to a discrete class
+% gvf: The GVF score achieved when terminated 
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%************************************************
+function [classLabels, gvf] = jenks_gvf(data, gvfThreshold, maxClasses)
+if nargin < 3
+    maxClasses = 10;
+end 
+%------------------------------------------------
+% set up stage
+data = data(:); % standardize input to a column vector
+totalSS = sum((data - mean(data)).^2); % compute overall variance in the dataset (total sum of squares)
+bestGVF = 0; % to track best-fitting classification 
+%------------------------------------------------
+% the core loop of jenks_gvf function 
+for k = 2:maxClasses
+        edges = jenks_breaks(data, k);
+        labels = discretize(data, edges);
+        withinSS = 0;
+        for i = 1:k
+            group = data(labels == i);
+            if ~isempty(group)
+                withinSS = withinSS + sum((group - mean(group)).^2);
+            end
+        end
+        gvf = (totalSS - withinSS) / totalSS;
+        if gvf >= gvfThreshold
+            classLabels = labels;
+            return;
+        end
+        if gvf > bestGVF
+            bestGVF = gvf;
+            classLabels = labels;
+        end
+    end
+    gvf = bestGVF;
+end
